@@ -15,11 +15,16 @@ import {
   loadIntoCookieJar,
 } from "./src/index.js";
 import { modules } from "./src/index.js";
-import { readFileSync } from "fs";
+import { IMAGE_TOOL_ID } from "./src/core/constants.js";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { fileURLToPath } from "url";
 import path from "path";
+import crypto from "crypto";
+import axios from "axios";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const IMAGE_DIR = path.join(__dirname, "images");
+if (!existsSync(IMAGE_DIR)) mkdirSync(IMAGE_DIR, { recursive: true });
 const DOCS_HTML = readFileSync(
   path.join(__dirname, "src/static/index.html"),
   "utf8",
@@ -82,6 +87,35 @@ function parseUrls(raw) {
     : [];
 }
 
+
+function formatCookieHeaderObj(cookies) {
+  return Object.entries(cookies || {})
+    .filter(([, v]) => v !== undefined && v !== null)
+    .map(([k, v]) => `${k}=${v}`)
+    .join("; ");
+}
+
+function extractImageUrls(obj, out = []) {
+  if (!obj) return out;
+  if (typeof obj === "string") {
+    if (/^https?:\/\//.test(obj) && (obj.includes("googleusercontent") || obj.includes("gg-dl") || /\.(jpg|jpeg|png|webp)/i.test(obj))) out.push(obj);
+    return out;
+  }
+  if (Array.isArray(obj)) { for (const x of obj) extractImageUrls(x, out); return out; }
+  if (typeof obj === "object") { for (const v of Object.values(obj)) extractImageUrls(v, out); return out; }
+  return out;
+}
+
+app.get("/images/:name", (req, res) => {
+  const name = path.basename(req.params.name);
+  const fp = path.join(IMAGE_DIR, name);
+  if (!existsSync(fp)) { res.status(404).end(); return; }
+  const ext = path.extname(name).toLowerCase();
+  const type = ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg";
+  res.setHeader("Content-Type", type);
+  res.end(readFileSync(fp));
+});
+
 app.get("/", (_req, res) => {
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.end(DOCS_HTML);
@@ -137,8 +171,9 @@ app.get("/api/gemini/chat", async (req, res) => {
   const { ask, chat, upload } = req.query;
   const prompt = ask || chat || "";
   const urls = parseUrls(upload ?? "");
+  const toolId = req.query.image !== undefined ? IMAGE_TOOL_ID : (req.query.tool ? Number(req.query.tool) : null);
 
-  if (!prompt && !urls.length) {
+  if (!prompt && !urls.length && !toolId) {
     res
       .status(400)
       .json(http.err("provide ?ask=<message> or ?upload=<url>&chat=<message>"));
@@ -168,16 +203,49 @@ app.get("/api/gemini/chat", async (req, res) => {
     }
 
     const response = await client.send(
-      prompt || "Describe and explain these files.",
-      { metadata, fileData },
+      prompt || (toolId === IMAGE_TOOL_ID ? "Generate an image." : "Describe and explain these files."),
+      { metadata, fileData, toolId },
     );
     const meta = response.metadata;
 
+    const remoteUrls = [...new Set(extractImageUrls(response))];
+    const localImages = [];
+    let cookieHeader = formatCookieHeaderObj(client.getCookies());
+    try {
+      const cj = JSON.parse(readFileSync(path.join(__dirname, "cookies.json"), "utf8"));
+      const arr = Array.isArray(cj) ? cj : (cj.cookies || []);
+      const full = arr.map(c => `${c.name}=${c.value}`).join("; ");
+      if (full.length > cookieHeader.length) cookieHeader = full;
+    } catch (e) { console.error("cookie read err", e.message); }
+    for (const u of remoteUrls) {
+      try {
+        let target = u;
+        let r = null;
+        for (let hop = 0; hop < 6; hop++) {
+          r = await axios.get(target, { responseType: "arraybuffer", timeout: 30_000, maxRedirects: 0, validateStatus: () => true, headers: { Cookie: cookieHeader, "User-Agent": "Mozilla/5.0", "Referer": "https://gemini.google.com/", "Origin": "https://gemini.google.com", "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8" } });
+          if (r.status >= 300 && r.status < 400 && r.headers.location) {
+            target = new URL(r.headers.location, target).href;
+            continue;
+          }
+          break;
+        }
+        if (!r || r.status >= 400) throw new Error(`HTTP ${r ? r.status : "no response"}`);
+        const ext = (u.match(/\.(jpg|jpeg|png|webp)/i)?.[1] || "jpg").toLowerCase().replace("jpeg", "jpg");
+        const name = `${crypto.randomUUID()}.${ext}`;
+        writeFileSync(path.join(IMAGE_DIR, name), Buffer.from(r.data));
+        const _host = (req.headers && req.headers.host) ? req.headers.host : "localhost:8099";
+        localImages.push(`${req.protocol || "http"}://${_host}/images/${name}`);
+      } catch (e) {
+        logger.warn(`image download failed: ${e.message}`);
+      }
+    }
+    const images = localImages.length ? localImages : remoteUrls;
     res.json({
       msg: response.text ?? response.candidates?.[0]?.text ?? "",
       cid: meta?.cid ?? "",
       rid: meta?.rid ?? "",
       rcid: meta?.rcid ?? "",
+      images,
     });
   } catch (e) {
     logger.error(`chat: ${e.message}`);

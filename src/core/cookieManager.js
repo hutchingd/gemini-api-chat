@@ -169,13 +169,12 @@ export function checkCookies() {
   const otherFound = AUTH_COOKIE_KEYS.filter(
     k => !CRITICAL_COOKIES.includes(k) && !ALT_CRITICAL.includes(k) && k in flat
   );
-  const primaryValid = Object.values(results).every(r => r.present);
-  const altValid     = Object.values(altResults).every(r => r.present);
+  const psid = flat['__Secure-1PSID'] || flat['__Secure-3PSID'] || flat.SID || '';
   return {
     critical: results, alt: altResults, other_auth_found: otherFound,
     total_cookies: Object.keys(flat).length,
-    valid: primaryValid || altValid,
-    psid: flat['__Secure-1PSID'] || flat['__Secure-3PSID'] || '',
+    valid: Boolean(psid),
+    psid,
     path: p,
     jar_size: Object.keys(flat).length,
   };

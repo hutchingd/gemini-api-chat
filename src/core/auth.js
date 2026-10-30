@@ -6,6 +6,7 @@ import {
 } from './constants.js';
 import { AuthError } from './exceptions.js';
 import { CookieJar } from '../util/cookieJar.js';
+import { largeHeaderTransport } from '../util/httpTransport.js';
 import { logger } from "@exocore/multi"
 
 export class AuthTokens {
@@ -77,6 +78,7 @@ export async function fetchTokens(cookies, proxy = null) {
     maxRedirects: 5,
     proxy: proxy ? parseAxiosProxy(proxy) : false,
     validateStatus: () => true,
+    transport: largeHeaderTransport,
   });
   jar.attachTo(client);
 
@@ -94,6 +96,7 @@ export async function rotateCookies(cookies, proxy = null) {
     headers: { ...ROTATE_COOKIES_HEADERS },
     proxy: proxy ? parseAxiosProxy(proxy) : false,
     validateStatus: () => true,
+    transport: largeHeaderTransport,
   });
   jar.attachTo(client);
 

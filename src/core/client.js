@@ -6,6 +6,7 @@ import { ConversationMetadata, RPCPayload, StreamResponse } from './models.js';
 import { ProfileManager } from './profiles.js';
 import { RPCTransport } from './rpc.js';
 import { CookieJar } from '../util/cookieJar.js';
+import { largeHeaderTransport } from '../util/httpTransport.js';
 import { logger } from "@exocore/multi";
 import { COOKIES_JSON_PATH, LOCAL_COOKIES_PATH, discoverCookiesPath, importCookiesToProfile } from './cookieManager.js';
 import * as fs from 'fs';
@@ -78,6 +79,7 @@ export class GeminiClient {
       maxRedirects: 5,
       proxy: this.proxy ? parseAxiosProxy(this.proxy) : false,
       validateStatus: () => true,
+      transport: largeHeaderTransport,
     });
     this.#jar.attachTo(this.#httpClient);
 
@@ -101,9 +103,6 @@ export class GeminiClient {
 
   async send(prompt, { model = null, metadata = null, fileData = null, gemId = null, toolId = null, stylePreset = null } = {}) {
     if (!this.#initialized) throw new AuthError('GeminiClient not initialized. Call init() first.');
-    if (toolId !== null && toolId !== undefined) {
-      throw new GeminiError('Tool-flagged requests require BotGuard and are not supported in the HTTP-only port.');
-    }
     if (fileData?.length > 0) logger.warn('client: file_data provided over HTTP path — Google may return 0 candidates.');
 
     const resolvedModel = this.#resolveModel(model);

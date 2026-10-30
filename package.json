@@ -10,6 +10,7 @@
   "dependencies": {
     "@exocore/multi": "^1.1.0",
     "axios": "^1.16.1",
+    "follow-redirects": "^1.16.2",
     "zod": "^4.4.3"
   }
 }

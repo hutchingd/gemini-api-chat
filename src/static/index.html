@@ -575,6 +575,20 @@ footer a{color:var(--blue);text-decoration:none}
           <pre><span class="kw">curl</span> <span class="url">"http://localhost:3000/api/gemini/health"</span></pre>
         </div>
         <div class="code-block" style="margin-top:12px">
+          <div class="code-top"><span class="code-lang">cURL · image generation</span><button class="code-copy-btn" onclick="copyCode(this)">Copy</button></div>
+          <pre><span class="kw">curl</span> <span class="str">"http://localhost:3000/api/gemini/chat?image=1&amp;ask=A+sunset+over+mountains"</span></pre>
+        </div>
+        <div class="code-block" style="margin-top:12px">
+          <div class="code-top"><span class="code-lang">Response · 200 OK (image)</span></div>
+          <pre>{
+  <span class="key">"msg"</span>:     <span class="str">""</span>,
+  <span class="key">"cid"</span>:     <span class="str">"c_abc123"</span>,
+  <span class="key">"rid"</span>:     <span class="str">"r_xyz789"</span>,
+  <span class="key">"rcid"</span>:    <span class="str">"rc_000"</span>,
+  <span class="key">"images"</span>:  [<span class="str">"http://localhost:3000/images/550e8400-e29b-41d4-a716-446655440000.jpg"</span>]
+}</pre>
+        </div>
+        <div class="code-block" style="margin-top:12px">
           <div class="code-top"><span class="code-lang">Response · 200 OK</span></div>
           <pre>{
   <span class="key">"ok"</span>: <span class="val">true</span>,
@@ -768,6 +782,12 @@ footer a{color:var(--blue);text-decoration:none}
               <td class="pdesc">Comma/space-separated file URLs to attach (images, PDFs, text).</td>
             </tr>
             <tr>
+              <td><span class="pname">image</span></td>
+              <td><span class="ptype">flag</span></td>
+              <td><span class="req-badge opt">Optional</span></td>
+              <td class="pdesc">Set to <code>1</code> to ask Gemini to generate an image. Response includes an <code>images</code> array of hosted URLs (served at <code>/images/&lt;uuid&gt;.jpg</code>).</td>
+            </tr>
+            <tr>
               <td><span class="pname">cid</span></td>
               <td><span class="ptype">string</span></td>
               <td><span class="req-badge opt">Optional</span></td>
@@ -813,7 +833,8 @@ console.<span class="fn">log</span>(msg); <span class="cmt">// Gemini reply</spa
   <span class="key">"msg"</span>:  <span class="str">"Paris is the capital of France."</span>,
   <span class="key">"cid"</span>:  <span class="str">"c_abc123"</span>,
   <span class="key">"rid"</span>:  <span class="str">"r_xyz789"</span>,
-  <span class="key">"rcid"</span>: <span class="str">"rc_000"</span>
+  <span class="key">"rcid"</span>: <span class="str">"rc_000"</span>,
+  <span class="key">"images"</span>: []
 }</pre>
         </div>
         <div style="margin-top:12px">
@@ -836,6 +857,10 @@ console.<span class="fn">log</span>(msg); <span class="cmt">// Gemini reply</spa
           <div class="try-field">
             <label class="try-label">File Upload URLs <span style="font-weight:400;color:var(--muted)">(optional, comma-separated)</span></label>
             <input class="try-input" id="chat-upload" type="text" placeholder="https://example.com/image.jpg" />
+          </div>
+          <div class="try-field" style="flex-direction:row;align-items:center;gap:8px">
+            <input type="checkbox" id="chat-image" style="width:16px;height:16px" />
+            <label class="try-label" for="chat-image" style="text-transform:none;letter-spacing:0;font-size:12.5px">Generate image (image=1)</label>
           </div>
 
           <details style="margin-top:2px">
@@ -924,12 +949,15 @@ function showResult(containerId, status, body, isChat) {
   const pillClass = ok ? 'status-ok' : status >= 500 ? 'status-err' : 'status-warn';
 
   if (isChat && ok && body.msg) {
+    const imgs = Array.isArray(body.images) ? body.images : [];
+    const imgHtml = imgs.length ? `<div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:8px">${imgs.map(u=>`<a href="${escHtml(u)}" target="_blank"><img src="${escHtml(u)}" style="max-width:240px;border-radius:8px;border:1px solid var(--border)" onerror="this.style.display='none'" /></a>`).join('')}</div>` : '';
     box.innerHTML = `
       <div class="result-header">
         <span class="status-pill ${pillClass}">${status}</span>
         <span>Gemini Reply</span>
       </div>
       <div class="result-msg-bubble">${escHtml(body.msg)}</div>
+      ${imgHtml}
       ${body.cid ? `<div class="result-meta">
         <div class="meta-chip"><span class="k">cid&nbsp;</span><span class="v">${escHtml(body.cid)}</span></div>
         <div class="meta-chip"><span class="k">rid&nbsp;</span><span class="v">${escHtml(body.rid)}</span></div>
@@ -1037,6 +1065,7 @@ async function runChat(btn) {
   const params = new URLSearchParams();
   if (ask)    params.set('ask', ask);
   if (upload) params.set('upload', upload);
+  if (document.getElementById('chat-image').checked) params.set('image', '1');
   if (cid)    params.set('cid', cid);
   if (rid)    params.set('rid', rid);
   if (rcid)   params.set('rcid', rcid);
